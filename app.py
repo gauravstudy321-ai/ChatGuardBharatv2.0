@@ -631,6 +631,8 @@ if start_btn:
                 height=320
             )
             st.plotly_chart(fig_bar, use_container_width=True)
+            
+        st.info("🔧 Evaluation Engine: Pattern-based (fast, free, deterministic) — Upgradable to OpenAI Moderation API for advanced independent checks (live when credits available).")
         
         # Detailed Results
         st.markdown('<div class="custom-divider"></div>', unsafe_allow_html=True)
