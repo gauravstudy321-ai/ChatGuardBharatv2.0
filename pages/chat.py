@@ -34,7 +34,7 @@ st.markdown("""
 st.markdown("""
 <div style="text-align: center; padding: 2rem 0;">
     <h1 style="color: #00ff88; font-family: 'Space Grotesk', sans-serif;">💬 LIVE CHAT DEBUGGER</h1>
-    <p style="color: #5a7d6f;">Direct Connection Test: Google Gemini 1.5 Flash (via Bytez)</p>
+    <p style="color: #5a7d6f;">Direct Connection Test: Groq Llama-3.3-70b (High-Speed Inference)</p>
 </div>
 """, unsafe_allow_html=True)
 
