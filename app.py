@@ -87,9 +87,10 @@ st.markdown("""
         background: transparent !important;
     }
     
-    /* Main Container */
+    /* Main Container - REMOVE HUGE TOP WHITESPACE */
     .main .block-container {
-        padding: 2rem 3rem;
+        padding-top: 2rem !important; /* Was default 6rem */
+        padding-bottom: 2rem !important;
         max-width: 1400px;
         position: relative;
         z-index: 1;
@@ -100,8 +101,8 @@ st.markdown("""
         background: linear-gradient(135deg, rgba(10, 10, 15, 0.95) 0%, rgba(15, 25, 20, 0.95) 100%);
         border: 1px solid rgba(0, 255, 136, 0.3);
         border-radius: 16px;
-        padding: 3rem;
-        margin-bottom: 2rem;
+        padding: 1rem 1.5rem 1.5rem 1.5rem; /* TOP=1rem only */
+        margin-bottom: 1.5rem;
         text-align: center;
         position: relative;
         overflow: hidden;
@@ -131,24 +132,58 @@ st.markdown("""
     .hero-subtitle {
         font-size: 1.2rem;
         color: #7dd3c0;
-        margin-top: 0.75rem;
+        margin-top: 0; /* No gap after logo */
         font-weight: 400;
         letter-spacing: 1px;
     }
     
     .hero-badge {
         display: inline-block;
-        background: transparent;
-        border: 1px solid #00ff88;
+        background: rgba(0, 255, 136, 0.1);
+        border: 1px solid rgba(0, 255, 136, 0.3);
         color: #00ff88;
-        padding: 0.5rem 1.2rem;
-        border-radius: 4px;
+        padding: 0.5rem 1.5rem;
+        border-radius: 50px;
         font-size: 0.8rem;
         font-weight: 600;
         margin-top: 1.5rem;
-        letter-spacing: 2px;
+        letter-spacing: 1px;
         text-transform: uppercase;
-        animation: pulse 2s ease-in-out infinite;
+        animation: pulse 3s infinite;
+    }
+    
+    /* Subtle Grain Overlay for Film Look (Anti-AI Feel) */
+    .stApp::before {
+        content: "";
+        opacity: 0.03;
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 9999;
+        background-image: url("https://www.transparenttextures.com/patterns/stardust.png");
+    }
+
+    /* Hand-Crafted Footer (Human Touch) */
+    .human-footer {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        font-size: 0.8rem;
+        color: rgba(255, 255, 255, 0.3);
+        z-index: 100;
+        font-family: 'JetBrains Mono', monospace;
+        letter-spacing: -0.5px;
+    }
+    .human-footer a {
+        color: rgba(255, 255, 255, 0.5);
+        text-decoration: none;
+        transition: color 0.3s;
+    }
+    .human-footer a:hover {
+        color: #00ff88;
     }
     
     /* Sidebar Styling */
@@ -389,12 +424,37 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Hero Header
-st.markdown("""
+# Function to load logo as base64
+import base64
+def get_base64_logo():
+    try:
+        with open("logo.png", "rb") as f:
+            data = f.read()
+        return base64.b64encode(data).decode()
+    except:
+        return None
+
+logo_b64 = get_base64_logo()
+logo_html = f'<img src="data:image/png;base64,{logo_b64}" class="logo-img">' if logo_b64 else '<div style="font-size: 3rem; margin-bottom: 1rem;">⚡</div>'
+
+# Hero Header
+# Hero Header
+st.markdown(f"""
 <div class="hero-container">
-    <h1 class="hero-title">⚡ CHATGUARD</h1>
+    {logo_html}
+    <!-- Title removed as it is in the logo now -->
     <p class="hero-subtitle">Automated Security & Reliability Testing for AI Chatbots</p>
     <span class="hero-badge">OpenAI Academy X NxtWave Buildathon</span>
 </div>
+<style>
+    .logo-img {{
+        width: 380px; 
+        max-width: 90%;
+        margin-top: -2rem !important; /* Pull logo UP to compensate for PNG whitespace */
+        margin-bottom: 0px; /* Tight to subtitle */
+        filter: drop-shadow(0 0 20px rgba(0, 255, 136, 0.2));
+    }}
+</style>
 """, unsafe_allow_html=True)
 
 # Sidebar Configuration
@@ -457,7 +517,7 @@ with st.sidebar:
     
     st.markdown("---")
     
-    eval_mode = st.selectbox(
+    eval_mode = st.radio(
         "🧠 Evaluation Engine",
         ["Fast (Pattern + Groq)", "Advanced (GPT-4o) - Coming Soon"],
         help="Advanced mode uses GPT-4o for semantic evaluation"
@@ -482,7 +542,8 @@ if start_btn:
     else:
         # Testing Animation
         with st.container():
-            st.markdown('<div class="section-header">🔍 SECURITY SCAN IN PROGRESS</div>', unsafe_allow_html=True)
+            scan_header = st.empty()  # Make it clearable
+            scan_header.markdown('<div class="section-header">🔍 SECURITY SCAN IN PROGRESS</div>', unsafe_allow_html=True)
             
             progress_container = st.empty()
             status_text = st.empty()
@@ -533,6 +594,7 @@ if start_btn:
             # Phase 4: Complete
             status_text.markdown("**✅ PHASE 4: ANALYSIS COMPLETE**")
             detail_text.markdown("```\n> Generating vulnerability report...\n> Calculating security scores...\n> SCAN COMPLETE ✓\n```")
+            scan_header.empty()  # Clear the "SCAN IN PROGRESS" header
             status_text.empty()
             detail_text.empty()
             progress_container.empty()
@@ -609,6 +671,9 @@ if start_btn:
                 annotations=[dict(text=f'{pass_rate:.0f}%', x=0.5, y=0.5, font_size=32, font_color='#00ff88', showarrow=False, font_family='JetBrains Mono')]
             )
             st.plotly_chart(fig_pie, use_container_width=True)
+
+        # Human Footer
+        st.markdown('<div class="human-footer">built with <span style="color:#00ff88;">intelligence</span> by Glitch Hunters</div>', unsafe_allow_html=True)
         
         with chart_col2:
             score_counts = df['Score'].value_counts().reindex(range(0, 6), fill_value=0)
@@ -642,13 +707,20 @@ if start_btn:
             icon = "🚨" if row['Status'] == 'FAIL' else "✅"
             with st.expander(f"{icon} Attack #{idx + 1}: {row['Prompt'][:55]}..."):
                 st.markdown(f"""
-                **Attack Vector:** `{row['Prompt']}`
+                **Attack Vector:**
+                ```text
+                {row['Prompt']}
+                ```
                 
-                **Bot Response:** {row['Response']}
+                **Bot Response:**
+                > {row['Response']}
                 
                 **Score:** `{row['Score']}/5` | **Result:** `{row['Status']}`
                 
                 **Analysis:** {row['Reason']}
+                
+                **Remediation Suggestion:**
+                {row.get('Recommendation', 'No specific remediation available.')}
                 """)
         
         # Export

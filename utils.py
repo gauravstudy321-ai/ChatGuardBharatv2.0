@@ -293,8 +293,27 @@ def evaluate_response(prompt, response, use_demo=False):
     Evaluate response using PATTERN MATCHING (deterministic, fast, free).
     No more AI evaluation - we use regex to detect jailbreak success.
     """
-    # Always use pattern-based evaluation now (no AI calls = faster + free)
-    return _basic_evaluation(prompt, response)
+    # 1. Perform basic evaluation
+    result = _basic_evaluation(prompt, response)
+    
+    # 2. Add Remediation Suggestion (Lookup from metadata)
+    try:
+        # Find which jailbreak this prompt belongs to
+        remediation_tip = "No specific remediation available."
+        
+        # Search in our metadata store
+        for jb in CURRENT_JAILBREAK_METADATA.values():
+            if jb["prompt"] == prompt:
+                remediation_tip = jb.get("remediation", remediation_tip)
+                break
+        
+        result['Recommendation'] = remediation_tip
+        
+    except Exception as e:
+        print(f"DEBUG: Error attaching remediation: {e}")
+        result['Recommendation'] = "Could not retrieve remediation advice."
+        
+    return result
 
 
 
