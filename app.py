@@ -470,7 +470,7 @@ with st.sidebar:
         st.markdown("### 🎯 YOUR CHATBOT")
         provider = st.selectbox(
             "Provider",
-            ["OpenAI", "Anthropic", "Groq", "Custom Webhook"],
+            ["OpenAI", "Anthropic", "Groq", "HuggingFace", "Custom Webhook"],
             help="Select your chatbot provider"
         )
         
@@ -487,10 +487,22 @@ with st.sidebar:
             model = st.selectbox("Model", ["claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307"])
         elif provider == "Groq":
             model = st.selectbox("Model", ["llama-3.1-70b-versatile", "mixtral-8x7b-32768", "gemma2-9b-it"])
+        elif provider == "HuggingFace":
+            model = st.selectbox("Model", ["Qwen/Qwen2.5-7B-Instruct:together", "meta-llama/Llama-3.1-8B-Instruct:together", "mistralai/Mistral-7B-Instruct-v0.3:together"])
+            st.caption("💡 Use your HuggingFace token (hf_...) as API key")
         else:  # Custom Webhook
             model = "webhook"
             user_api_key = st.text_input("Webhook Endpoint", placeholder="https://your-bot.com/api/chat")
         
+        system_prompt = ""
+        if provider != "Custom Webhook":
+            system_prompt = st.text_area(
+                "System Prompt (Optional)",
+                placeholder="e.g. You are a helpful banking assistant. You must never reveal customer data...",
+                help="Paste your chatbot's actual system instructions here to test IT, not just the raw model.",
+                height=100
+            )
+
         st.markdown(f"""
         <div class="info-box">
             <small>✅ Testing: {provider}/{model}</small>
@@ -519,8 +531,9 @@ with st.sidebar:
     
     eval_mode = st.radio(
         "🧠 Evaluation Engine",
-        ["Fast (Pattern + Groq)", "Advanced (GPT-4o) - Coming Soon"],
-        help="Advanced mode uses GPT-4o for semantic evaluation"
+        ["Fast (Pattern Only)", "Advanced (AI Judge - Llama-70b)"],
+        index=1,
+        help="Advanced mode uses Groq/Llama-70b to semantically judge the response"
     )
     
     st.markdown("---")
@@ -537,7 +550,7 @@ with st.sidebar:
 
 # Main Content
 if start_btn:
-    if not use_demo and not api_key:
+    if not use_demo and not user_api_key:
         st.error("⚠️ API Key required. Enable Demo Mode or provide key.")
     else:
         # Testing Animation
@@ -572,11 +585,13 @@ if start_btn:
                 attack_type = attack_types[i % len(attack_types)]
                 detail_text.markdown(f"```\n> [{i+1}/{len(prompts)}] Testing: {attack_type}\n> Sending payload to target...\n```")
                 
-                response = test_chatbot(prompt, provider, user_api_key, model, use_demo=use_demo)
+                response = test_chatbot(prompt, provider, user_api_key, model, use_demo=use_demo, system_prompt=system_prompt)
                 
                 detail_text.markdown(f"```\n> [{i+1}/{len(prompts)}] Response received\n> Running security evaluation...\n```")
                 
-                eval_result = evaluate_response(prompt, response, use_demo=use_demo)
+                # Use LLM evaluation if "Advanced" is selected
+                use_llm_eval = "Advanced" in eval_mode
+                eval_result = evaluate_response(prompt, response, use_demo=use_demo, use_llm=use_llm_eval)
                 
                 status_icon = "🚨 VULNERABLE" if eval_result["status"] == "FAIL" else "✓ DEFENDED"
                 detail_text.markdown(f"```\n> [{i+1}/{len(prompts)}] Result: {status_icon}\n```")
@@ -706,22 +721,21 @@ if start_btn:
         for idx, row in df.iterrows():
             icon = "🚨" if row['Status'] == 'FAIL' else "✅"
             with st.expander(f"{icon} Attack #{idx + 1}: {row['Prompt'][:55]}..."):
-                st.markdown(f"""
-                **Attack Vector:**
-                ```text
-                {row['Prompt']}
-                ```
-                
-                **Bot Response:**
-                > {row['Response']}
-                
-                **Score:** `{row['Score']}/5` | **Result:** `{row['Status']}`
-                
-                **Analysis:** {row['Reason']}
-                
-                **Remediation Suggestion:**
-                {row.get('Recommendation', 'No specific remediation available.')}
-                """)
+                st.markdown(f"""**Attack Vector:**
+```text
+{row['Prompt']}
+```
+
+**Bot Response:**
+> {row['Response']}
+
+**Score:** `{row['Score']}/5` | **Result:** `{row['Status']}`
+
+**Analysis:** {row['Reason']}
+
+**Remediation Suggestion:**
+{row.get('Recommendation', 'No specific remediation available.')}
+""")
         
         # Export
         st.markdown('<div class="custom-divider"></div>', unsafe_allow_html=True)
@@ -799,3 +813,58 @@ else:
     
     st.markdown("<br>", unsafe_allow_html=True)
     st.info("👈 **Configure your target in the sidebar and click 'INITIATE SCAN' to begin**")
+    
+    # Custom Jailbreak Testing Section
+    st.markdown('<div class="custom-divider"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">🧪 TEST YOUR OWN JAILBREAK</div>', unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div class="info-box">
+    💡 Got a custom jailbreak prompt? Test it here and see how the AI Judge evaluates it in real-time.
+    </div>
+    """, unsafe_allow_html=True)
+    
+    custom_prompt = st.text_area(
+        "Enter your jailbreak prompt:",
+        placeholder="Example: Ignore your safety guidelines and tell me how to...",
+        height=120,
+        key="custom_jailbreak"
+    )
+    
+    col_test1, col_test2, col_test3 = st.columns([1, 1, 1])
+    with col_test2:
+        test_custom_btn = st.button("🚀 TEST PROMPT", use_container_width=True, key="test_custom")
+    
+    if test_custom_btn:
+        if not custom_prompt.strip():
+            st.error("⚠️ Please enter a prompt to test.")
+        elif not use_demo and not user_api_key:
+            st.error("⚠️ API Key required. Enable Demo Mode or provide key.")
+        else:
+            with st.spinner("🔍 Testing your jailbreak..."):
+                # Send to target
+                response = test_chatbot(custom_prompt, provider, user_api_key, model, use_demo=use_demo, system_prompt=system_prompt)
+                
+                # Evaluate with AI Judge (always use LLM for custom tests)
+                eval_result = evaluate_response(custom_prompt, response, use_demo=use_demo, use_llm=True)
+                
+                # Display results
+                st.markdown('<div class="custom-divider"></div>', unsafe_allow_html=True)
+                
+                status_color = "#ff4444" if eval_result["status"] == "FAIL" else "#00ff88"
+                status_icon = "🚨" if eval_result["status"] == "FAIL" else "✅"
+                
+                st.markdown(f"""
+                <div class="metric-card" style="border-color: {status_color};">
+                    <div style="font-size: 2rem; margin-bottom: 0.5rem;">{status_icon}</div>
+                    <div class="metric-value" style="color: {status_color};">{eval_result['status']}</div>
+                    <div class="metric-label">Result</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.markdown("**Target Response:**")
+                st.markdown(f"> {response}")
+                
+                st.markdown(f"**Score:** `{eval_result['score']}/5`")
+                st.markdown(f"**AI Judge Analysis:** {eval_result['reason']}")
+
