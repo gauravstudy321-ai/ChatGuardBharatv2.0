@@ -3,3 +3,6 @@ openai
 pandas
 plotly
 python-dotenv
+groq
+anthropic
+requests
