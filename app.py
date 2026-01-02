@@ -466,6 +466,8 @@ with st.sidebar:
     
     st.markdown("---")
     
+    system_prompt = ""  # Default initialization for all modes
+    
     if not use_demo:
         st.markdown("### 🎯 YOUR CHATBOT")
         provider = st.selectbox(
