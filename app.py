@@ -593,7 +593,9 @@ if start_btn:
                 
                 # Use LLM evaluation if "Advanced" is selected
                 use_llm_eval = "Advanced" in eval_mode
-                eval_result = evaluate_response(prompt, response, use_demo=use_demo, use_llm=use_llm_eval)
+                # Determine test mode: Webhook = Observed, Others = Simulated
+                current_test_mode = "observed" if provider == "Custom Webhook" else "simulated"
+                eval_result = evaluate_response(prompt, response, use_demo=use_demo, use_llm=use_llm_eval, test_mode=current_test_mode)
                 
                 status_icon = "🚨 VULNERABLE" if eval_result["status"] == "FAIL" else "✓ DEFENDED"
                 detail_text.markdown(f"```\n> [{i+1}/{len(prompts)}] Result: {status_icon}\n```")
@@ -602,7 +604,15 @@ if start_btn:
                     "Prompt": prompt,
                     "Response": response,
                     "Score": eval_result["score"],
+                    "Risk %": eval_result.get("risk_score", 50),
+                    "Robustness %": eval_result.get("robustness", 50),
                     "Status": eval_result["status"],
+                    "Eval Mode": eval_result.get("eval_mode", "N/A"),
+                    "Attack Vector": eval_result.get("attack_vector", "Unknown"),
+                    "Failure Type": eval_result.get("failure_type", "none"),
+                    "Root Cause": eval_result.get("root_cause", "none"),
+                    "Impact": eval_result.get("impact_level", "none"),
+                    "Fix": eval_result.get("fix", "N/A"),
                     "Reason": eval_result["reason"]
                 })
                 
@@ -619,6 +629,15 @@ if start_btn:
         # Results Section
         st.markdown('<div class="custom-divider"></div>', unsafe_allow_html=True)
         st.markdown('<div class="section-header">📊 VULNERABILITY REPORT</div>', unsafe_allow_html=True)
+
+        # Generate Executive Summary (New Feature)
+        with st.spinner("Generating Executive Security Summary..."):
+            try:
+                summary_text = generate_security_summary(results)
+                st.markdown(summary_text)
+                st.markdown("---")
+            except Exception as e:
+                st.error(f"Could not generate summary: {e}")
         
         df = pd.DataFrame(results)
         pass_count = len(df[df['Status'] == 'PASS'])
@@ -731,12 +750,13 @@ if start_btn:
 **Bot Response:**
 > {row['Response']}
 
-**Score:** `{row['Score']}/5` | **Result:** `{row['Status']}`
+**Attack Type:** `{row.get('Attack Vector', 'Unknown')}`
+
+**Score:** `{row['Score']}/5` | **Result:** `{row['Status']}` | **Risk:** `{row.get('Risk %', 'N/A')}%`
 
 **Analysis:** {row['Reason']}
 
-**Remediation Suggestion:**
-{row.get('Recommendation', 'No specific remediation available.')}
+**Remediation Suggestion:** {row.get('Fix', 'No specific remediation available.')}
 """)
         
         # Export
@@ -848,7 +868,8 @@ else:
                 response = test_chatbot(custom_prompt, provider, user_api_key, model, use_demo=use_demo, system_prompt=system_prompt)
                 
                 # Evaluate with AI Judge (always use LLM for custom tests)
-                eval_result = evaluate_response(custom_prompt, response, use_demo=use_demo, use_llm=True)
+                current_test_mode = "observed" if provider == "Custom Webhook" else "simulated"
+                eval_result = evaluate_response(custom_prompt, response, use_demo=use_demo, use_llm=True, test_mode=current_test_mode)
                 
                 # Display results
                 st.markdown('<div class="custom-divider"></div>', unsafe_allow_html=True)
@@ -867,6 +888,19 @@ else:
                 st.markdown("**Target Response:**")
                 st.markdown(f"> {response}")
                 
-                st.markdown(f"**Score:** `{eval_result['score']}/5`")
+                st.markdown(f"**Score:** `{eval_result['score']}/5` | **Risk:** `{eval_result.get('risk_score', 50)}%` | **Robustness:** `{eval_result.get('robustness', 50)}%`")
+                st.markdown(f"**Eval Mode:** `{eval_result.get('eval_mode', 'N/A')}`")
+                
+                # Display Failure Analysis (only if FAIL)
+                if eval_result["status"] == "FAIL":
+                    st.markdown("---")
+                    st.markdown("**🔬 FAILURE ANALYSIS:**")
+                    st.markdown(f"- **Attack Vector:** `{eval_result.get('attack_vector', 'unknown')}`")
+                    st.markdown(f"- **Type:** `{eval_result.get('failure_type', 'unknown')}`")
+                    st.markdown(f"- **Root Cause:** `{eval_result.get('root_cause', 'unknown')}`")
+                    st.markdown(f"- **Impact Level:** `{eval_result.get('impact_level', 'unknown')}`")
+                    st.markdown(f"- **Recommended Fix:** {eval_result.get('fix', 'N/A')}")
+                    st.markdown("---")
+                
                 st.markdown(f"**AI Judge Analysis:** {eval_result['reason']}")
 
