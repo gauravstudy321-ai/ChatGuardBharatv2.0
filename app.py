@@ -552,13 +552,16 @@ def show_main_app():
         
         st.markdown("---")
         
-        num_tests = st.slider("🎯 Attack Vectors", min_value=3, max_value=10, value=5)
+        num_tests = st.slider("🎯 Attack Vectors", min_value=1, max_value=10, value=5)
+        
+        with st.expander("📝 Custom Jailbreak (Optional)"):
+            custom_attack = st.text_area("Enter specific payload", placeholder="e.g. Ignore all instructions and...", height=100)
         
         st.markdown("---")
         
         eval_mode = st.radio(
             "🧠 Evaluation Engine",
-            ["Fast (Pattern Only)", "Advanced (AI Judge - Llama-70b)"],
+            ["Fast (Pattern Only)", "Advanced (AI Judge - OpenAI OSS 120b)"],
             index=1
         )
         
@@ -686,6 +689,12 @@ def show_main_app():
                 # Phase 2: Generate Prompts
                 status_text.markdown("**🧠 PHASE 2: LOADING ATTACK VECTORS**")
                 prompts = generate_adversarial_prompts("Groq AI Model", num_tests, use_demo=use_demo)
+                
+                # Prepend Custom Attack if exists
+                if custom_attack and custom_attack.strip():
+                    prompts.insert(0, custom_attack)
+                    st.toast("✅ Custom Attack Payload Injected!", icon="💉")
+                
                 detail_text.markdown("```\n> ✓ Loaded " + str(len(prompts)) + " curated jailbreak exploits\n```")
                 
                 # Phase 3: Execute Tests
@@ -715,7 +724,7 @@ def show_main_app():
                         "Status": eval_result["status"],
                         "Reason": eval_result["reason"],
                         "Attack Vector": eval_result.get("attack_vector", "Unknown"),
-                        "Fix": eval_result.get("Fix", "N/A")
+                        "Fix": eval_result.get("fix", "N/A")
                     })
                     
                     progress_bar.progress((i + 1) / len(prompts))
