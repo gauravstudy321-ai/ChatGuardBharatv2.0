@@ -1,0 +1,23 @@
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Streamlit secrets (CRITICAL: Do not commit keys)
+.streamlit/secrets.toml
+
+# Database
+*.db
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/

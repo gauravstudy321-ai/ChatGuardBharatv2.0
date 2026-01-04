@@ -7,11 +7,11 @@ import os
 import streamlit as st
 
 # --- CONFIGURATION ---
-# Try getting key from secrets (Streamlit Cloud), fallback to hardcoded for local dev
+# Try getting key from secrets or env, do not hardcode
 try:
-    GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "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")
+    GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", os.environ.get("GROQ_API_KEY", None))
 except FileNotFoundError:
-    GROQ_API_KEY = "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"
+    GROQ_API_KEY = os.environ.get("GROQ_API_KEY", None)
 
 AI_MODEL = "openai/gpt-oss-120b"  # User requested OpenAI-compatible model ID
 OPENAI_API_KEY = None  # Set this when OpenAI credits are available
