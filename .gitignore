@@ -21,3 +21,8 @@ ENV/
 # IDE
 .vscode/
 .idea/
+
+*.md
+*.txt
+.envexample
+
