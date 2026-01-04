@@ -1,8 +1,8 @@
 streamlit
-openai
 pandas
 plotly
-python-dotenv
-groq
+openai
 anthropic
+groq
 requests
+python-dotenv

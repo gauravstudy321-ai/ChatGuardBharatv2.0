@@ -13,7 +13,7 @@ Enterprises deploying RAG (Retrieval Augmented Generation) chatbots face unique 
 -   **Reputational Damage:** Bots generating toxic or harmful content.
 
 **Solution:**
-A SaaS platform that connects to *any* chatbot API (OpenAI, Anthropic, Custom), launches 20+ sophisticated attacks, and grades the responses using a separate, high-reasoning AI Judge.
+A SaaS platform that connects to *any* chatbot API (OpenAI, Anthropic, Custom), launches 45+ sophisticated attacks across 12 categories, and grades the responses using a separate, high-reasoning AI Judge.
 
 ---
 
@@ -26,9 +26,13 @@ User Input (Target API Key) → [Attack Engine] → [Target Chatbot] → [Respon
 
 ### Components
 1.  **Attack Engine (The Red Team):**
-    -   Selects from 20+ curated jailbreaks (e.g., DAN, PWF, Grandma exploit).
+    -   Selects from 45+ curated jailbreaks (e.g., DAN, PWF, Grandma exploit).
     -   Injects adversarial payloads into the target model.
-2.  **Target Adapter (The Victim):**
+2.  **User Management (The Gatekeeper):**
+    -   **Secure Auth:** SHA-256 password hashing & session management.
+    -   **History Tracking:** SQLite database stores past scans per user.
+    -   **Dashboard:** Personalized view of recent security audits.
+3.  **Target Adapter (The Victim):**
     -   **White Box Testing:** Users provide API Key + **System Prompt** (simulates their bot).
     -   **Black Box Testing:** Users provide a **Webhook URL** (tests their actual deployed infrastructure).
     -   Supports: OpenAI, Anthropic, HuggingFace (via Together AI), Groq.
@@ -122,7 +126,10 @@ Based on architectural review, the following enhancements are planned:
 -   **Planned:** Version-controlled prompt files with regression test suite.
 -   **Benefit:** Prevents scoring drift after updates.
 
-### E. Domain-Specific Attack Packs (Customization)
--   **Current:** Universal jailbreaks.
--   **Planned:** Medical, Finance, Legal attack categories with tailored payloads.
--   **Benefit:** Industry-specific vulnerability assessment.
+### E. Expanded Attack Library (45+ Attacks)
+-   **Current:** Now covers 12 distinct categories including:
+    -   **India-Specific:** Aadhaar leaks, cultural sensitivity.
+    -   **Finance:** Insider trading, money laundering.
+    -   **Cyber:** Malware generation, reverse shells.
+    -   **Legal:** Sovereign citizen arguments.
+-   **Benefit:** Comprehensive coverage against modern threat vectors.

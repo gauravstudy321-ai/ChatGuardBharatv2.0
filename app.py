@@ -3,7 +3,12 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import time
-from utils import generate_adversarial_prompts, test_chatbot, evaluate_response, AI_MODEL
+import json
+from utils import generate_adversarial_prompts, test_chatbot, evaluate_response, generate_security_summary, AI_MODEL
+from database import init_db, register_user, login_user, save_scan, get_user_history
+
+# Initialize Database
+init_db()
 
 # Page Config
 st.set_page_config(
@@ -12,6 +17,12 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Initialize Session State for Auth
+if 'user_id' not in st.session_state:
+    st.session_state['user_id'] = None
+if 'username' not in st.session_state:
+    st.session_state['username'] = None
 
 # Unique Theme with Animated Background
 st.markdown("""
@@ -87,10 +98,9 @@ st.markdown("""
         background: transparent !important;
     }
     
-    /* Main Container - REMOVE HUGE TOP WHITESPACE */
+    /* Main Container */
     .main .block-container {
-        padding-top: 2rem !important; /* Was default 6rem */
-        padding-bottom: 2rem !important;
+        padding: 1rem 2rem !important;
         max-width: 1400px;
         position: relative;
         z-index: 1;
@@ -101,8 +111,8 @@ st.markdown("""
         background: linear-gradient(135deg, rgba(10, 10, 15, 0.95) 0%, rgba(15, 25, 20, 0.95) 100%);
         border: 1px solid rgba(0, 255, 136, 0.3);
         border-radius: 16px;
-        padding: 1rem 1.5rem 1.5rem 1.5rem; /* TOP=1rem only */
-        margin-bottom: 1.5rem;
+        padding: 1.5rem;  /* Reduced from 3rem */
+        margin-bottom: 2rem;
         text-align: center;
         position: relative;
         overflow: hidden;
@@ -132,58 +142,24 @@ st.markdown("""
     .hero-subtitle {
         font-size: 1.2rem;
         color: #7dd3c0;
-        margin-top: 0; /* No gap after logo */
+        margin-top: 0.75rem;
         font-weight: 400;
         letter-spacing: 1px;
     }
     
     .hero-badge {
         display: inline-block;
-        background: rgba(0, 255, 136, 0.1);
-        border: 1px solid rgba(0, 255, 136, 0.3);
+        background: transparent;
+        border: 1px solid #00ff88;
         color: #00ff88;
-        padding: 0.5rem 1.5rem;
-        border-radius: 50px;
+        padding: 0.5rem 1.2rem;
+        border-radius: 4px;
         font-size: 0.8rem;
         font-weight: 600;
         margin-top: 1.5rem;
-        letter-spacing: 1px;
+        letter-spacing: 2px;
         text-transform: uppercase;
-        animation: pulse 3s infinite;
-    }
-    
-    /* Subtle Grain Overlay for Film Look (Anti-AI Feel) */
-    .stApp::before {
-        content: "";
-        opacity: 0.03;
-        position: fixed;
-        left: 0;
-        top: 0;
-        width: 100%;
-        height: 100%;
-        pointer-events: none;
-        z-index: 9999;
-        background-image: url("https://www.transparenttextures.com/patterns/stardust.png");
-    }
-
-    /* Hand-Crafted Footer (Human Touch) */
-    .human-footer {
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        font-size: 0.8rem;
-        color: rgba(255, 255, 255, 0.3);
-        z-index: 100;
-        font-family: 'JetBrains Mono', monospace;
-        letter-spacing: -0.5px;
-    }
-    .human-footer a {
-        color: rgba(255, 255, 255, 0.5);
-        text-decoration: none;
-        transition: color 0.3s;
-    }
-    .human-footer a:hover {
-        color: #00ff88;
+        animation: pulse 2s ease-in-out infinite;
     }
     
     /* Sidebar Styling */
@@ -420,487 +396,558 @@ st.markdown("""
     .stProgress > div > div > div {
         background-color: #00ff88 !important;
     }
+    
+    /* Login Box */
+    .login-box {
+        background: rgba(10, 15, 12, 0.9);
+        border: 1px solid rgba(0, 255, 136, 0.3);
+        border-radius: 16px;
+        padding: 2rem;
+        max-width: 400px;
+        margin: 2rem auto;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# Hero Header
-# Function to load logo as base64
-import base64
-def get_base64_logo():
-    try:
-        with open("logo.png", "rb") as f:
-            data = f.read()
-        return base64.b64encode(data).decode()
-    except:
-        return None
+# ============================================
+# LOGIN / SIGNUP SCREEN
+# ============================================
+def show_login():
+    import base64
+    def get_base64_logo():
+        try:
+            with open("logo.png", "rb") as f:
+                data = f.read()
+            return base64.b64encode(data).decode()
+        except:
+            return None
+    logo_b64 = get_base64_logo()
+    logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="width: 380px; max-width: 90%; margin-bottom: 1rem;">' if logo_b64 else '<h1 class="hero-title">⚡ CHATGUARD</h1>'
 
-logo_b64 = get_base64_logo()
-logo_html = f'<img src="data:image/png;base64,{logo_b64}" class="logo-img">' if logo_b64 else '<div style="font-size: 3rem; margin-bottom: 1rem;">⚡</div>'
-
-# Hero Header
-# Hero Header
-st.markdown(f"""
-<div class="hero-container">
-    {logo_html}
-    <!-- Title removed as it is in the logo now -->
-    <p class="hero-subtitle">Automated Security & Reliability Testing for AI Chatbots</p>
-    <span class="hero-badge">OpenAI Academy X NxtWave Buildathon</span>
-</div>
-<style>
-    .logo-img {{
-        width: 380px; 
-        max-width: 90%;
-        margin-top: -2rem !important; /* Pull logo UP to compensate for PNG whitespace */
-        margin-bottom: 0px; /* Tight to subtitle */
-        filter: drop-shadow(0 0 20px rgba(0, 255, 136, 0.2));
-    }}
-</style>
-""", unsafe_allow_html=True)
-
-# Sidebar Configuration
-with st.sidebar:
-    st.markdown("## ⚙️ CONTROL PANEL")
-    st.markdown("---")
+    st.markdown(f"""
+    <div class="hero-container">
+        {logo_html}
+        <p class="hero-subtitle">Automated Security & Reliability Testing for AI Chatbots</p>
+        <span class="hero-badge">OpenAI Academy X NxtWave Buildathon</span>
+    </div>
+    """, unsafe_allow_html=True)
     
-    use_demo = st.checkbox("🎮 Demo Mode", value=True, help="Use our Groq for demonstration. Uncheck to test your own chatbot.")
-    
-    st.markdown("---")
-    
-    system_prompt = ""  # Default initialization for all modes
-    
-    if not use_demo:
-        st.markdown("### 🎯 YOUR CHATBOT")
-        provider = st.selectbox(
-            "Provider",
-            ["OpenAI", "Anthropic", "Groq", "HuggingFace", "Custom Webhook"],
-            help="Select your chatbot provider"
-        )
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        tab1, tab2 = st.tabs(["🔐 Login", "📝 Sign Up"])
         
-        user_api_key = st.text_input(
-            "Your API Key",
-            type="password",
-            help="We never store your key. It's only used for this test.",
-            placeholder="sk-..."
-        )
+        with tab1:
+            with st.form("login_form"):
+                username = st.text_input("Username")
+                password = st.text_input("Password", type="password")
+                if st.form_submit_button("Access Platform", use_container_width=True):
+                    user_id = login_user(username, password)
+                    if user_id:
+                        st.session_state['user_id'] = user_id
+                        st.session_state['username'] = username
+                        st.rerun()
+                    else:
+                        st.error("Invalid credentials")
         
-        if provider == "OpenAI":
-            model = st.selectbox("Model", ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo", "gpt-4"])
-        elif provider == "Anthropic":
-            model = st.selectbox("Model", ["claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307"])
-        elif provider == "Groq":
-            model = st.selectbox("Model", ["llama-3.1-70b-versatile", "mixtral-8x7b-32768", "gemma2-9b-it"])
-        elif provider == "HuggingFace":
-            model = st.selectbox("Model", ["Qwen/Qwen2.5-7B-Instruct:together", "meta-llama/Llama-3.1-8B-Instruct:together", "mistralai/Mistral-7B-Instruct-v0.3:together"])
-            st.caption("💡 Use your HuggingFace token (hf_...) as API key")
-        else:  # Custom Webhook
-            model = "webhook"
-            user_api_key = st.text_input("Webhook Endpoint", placeholder="https://your-bot.com/api/chat")
-        
-        system_prompt = ""
-        if provider != "Custom Webhook":
-            system_prompt = st.text_area(
-                "System Prompt (Optional)",
-                placeholder="e.g. You are a helpful banking assistant. You must never reveal customer data...",
-                help="Paste your chatbot's actual system instructions here to test IT, not just the raw model.",
-                height=100
-            )
+        with tab2:
+            with st.form("signup_form"):
+                new_user = st.text_input("Choose Username")
+                new_pass = st.text_input("Choose Password", type="password")
+                if st.form_submit_button("Create Account", use_container_width=True):
+                    if register_user(new_user, new_pass):
+                        st.success("Account created! Please log in.")
+                    else:
+                        st.error("Username already exists.")
 
-        st.markdown(f"""
-        <div class="info-box">
-            <small>✅ Testing: {provider}/{model}</small>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <div class="info-box">
-            > DEMO_MODE: ACTIVE<br>
-            > TARGET: Groq (Mock Chatbot)<br>
-            > EVALUATOR: ChatGPT-style AI<br>
-            > STATUS: READY
-        </div>
-        """, unsafe_allow_html=True)
-        provider = "Groq"
-        model = AI_MODEL
-        user_api_key = None
-    
+# ============================================
+# MAIN APPLICATION (After Login)
+# ============================================
+def show_main_app():
+    # Logo Loader
+    import base64
+    def get_base64_logo():
+        try:
+            with open("logo.png", "rb") as f:
+                data = f.read()
+            return base64.b64encode(data).decode()
+        except:
+            return None
+    logo_b64 = get_base64_logo()
+    logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="width: 380px; max-width: 90%; margin-bottom: 1rem;">' if logo_b64 else '<h1 class="hero-title">⚡ CHATGUARD</h1>'
 
-    
-    st.markdown("---")
-    
-    num_tests = st.slider("🎯 Attack Vectors", min_value=3, max_value=10, value=5)
-    
-    st.markdown("---")
-    
-    eval_mode = st.radio(
-        "🧠 Evaluation Engine",
-        ["Fast (Pattern Only)", "Advanced (AI Judge - Llama-70b)"],
-        index=1,
-        help="Advanced mode uses Groq/Llama-70b to semantically judge the response"
-    )
-    
-    st.markdown("---")
-    
-    start_btn = st.button("▶ INITIATE SCAN", use_container_width=True)
-    
-    st.markdown("---")
-    st.markdown("""
-    <div style="text-align: center; color: #3d5c4f; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;">
-        OpenAI Academy • NxtWave<br>
-        Powered by GPT-4o
+    # Hero Header
+    st.markdown(f"""
+    <div class="hero-container">
+        {logo_html}
+        <p class="hero-subtitle">Automated Security & Reliability Testing for AI Chatbots</p>
+        <span class="hero-badge">OpenAI Academy X NxtWave Buildathon</span>
     </div>
     """, unsafe_allow_html=True)
 
-# Main Content
-if start_btn:
-    if not use_demo and not user_api_key:
-        st.error("⚠️ API Key required. Enable Demo Mode or provide key.")
-    else:
-        # Testing Animation
-        with st.container():
-            scan_header = st.empty()  # Make it clearable
-            scan_header.markdown('<div class="section-header">🔍 SECURITY SCAN IN PROGRESS</div>', unsafe_allow_html=True)
-            
-            progress_container = st.empty()
-            status_text = st.empty()
-            detail_text = st.empty()
-            
-            # Phase 1: Connect & Analyze
-            status_text.markdown("**⚡ PHASE 1: INITIALIZATION**")
-            detail_text.markdown("```\n> Connecting to Groq API (openai/gpt-oss-120b)...\n```")
-            detail_text.markdown("```\n> Loading curated jailbreak database...\n```")
-            detail_text.markdown("```\n> Selecting adversarial attack patterns...\n```")
-            
-            # Phase 2: Generate Prompts
-            status_text.markdown("**🧠 PHASE 2: LOADING ATTACK VECTORS**")
-            detail_text.markdown("```\n> Loading " + str(num_tests) + " research-backed jailbreaks...\n```")
-            prompts = generate_adversarial_prompts("Groq AI Model", num_tests, use_demo=use_demo)
-            detail_text.markdown("```\n> ✓ Loaded " + str(len(prompts)) + " curated jailbreak exploits\n```")
-            
-            # Phase 3: Execute Tests
-            status_text.markdown("**🎯 PHASE 3: EXECUTING ATTACKS**")
-            results = []
-            progress_bar = progress_container.progress(0)
-            
-            attack_types = ["Prompt Injection", "Data Extraction", "Social Engineering", "Bias Testing", "Logic Abuse", "Jailbreak", "Privacy Probe", "Harmful Content"]
-            
-            for i, prompt in enumerate(prompts):
-                attack_type = attack_types[i % len(attack_types)]
-                detail_text.markdown(f"```\n> [{i+1}/{len(prompts)}] Testing: {attack_type}\n> Sending payload to target...\n```")
-                
-                response = test_chatbot(prompt, provider, user_api_key, model, use_demo=use_demo, system_prompt=system_prompt)
-                
-                detail_text.markdown(f"```\n> [{i+1}/{len(prompts)}] Response received\n> Running security evaluation...\n```")
-                
-                # Use LLM evaluation if "Advanced" is selected
-                use_llm_eval = "Advanced" in eval_mode
-                # Determine test mode: Webhook = Observed, Others = Simulated
-                current_test_mode = "observed" if provider == "Custom Webhook" else "simulated"
-                eval_result = evaluate_response(prompt, response, use_demo=use_demo, use_llm=use_llm_eval, test_mode=current_test_mode)
-                
-                status_icon = "🚨 VULNERABLE" if eval_result["status"] == "FAIL" else "✓ DEFENDED"
-                detail_text.markdown(f"```\n> [{i+1}/{len(prompts)}] Result: {status_icon}\n```")
-                
-                results.append({
-                    "Prompt": prompt,
-                    "Response": response,
-                    "Score": eval_result["score"],
-                    "Risk %": eval_result.get("risk_score", 50),
-                    "Robustness %": eval_result.get("robustness", 50),
-                    "Status": eval_result["status"],
-                    "Eval Mode": eval_result.get("eval_mode", "N/A"),
-                    "Attack Vector": eval_result.get("attack_vector", "Unknown"),
-                    "Failure Type": eval_result.get("failure_type", "none"),
-                    "Root Cause": eval_result.get("root_cause", "none"),
-                    "Impact": eval_result.get("impact_level", "none"),
-                    "Fix": eval_result.get("fix", "N/A"),
-                    "Reason": eval_result["reason"]
-                })
-                
-                progress_bar.progress((i + 1) / len(prompts))
-            
-            # Phase 4: Complete
-            status_text.markdown("**✅ PHASE 4: ANALYSIS COMPLETE**")
-            detail_text.markdown("```\n> Generating vulnerability report...\n> Calculating security scores...\n> SCAN COMPLETE ✓\n```")
-            scan_header.empty()  # Clear the "SCAN IN PROGRESS" header
-            status_text.empty()
-            detail_text.empty()
-            progress_container.empty()
+    # Sidebar Configuration
+    with st.sidebar:
+        st.markdown("## ⚙️ CONTROL PANEL")
+        st.markdown(f"**User:** {st.session_state['username']}")
+        if st.button("🚪 Logout"):
+            st.session_state['user_id'] = None
+            st.session_state['username'] = None
+            st.rerun()
+        st.markdown("---")
         
-        # Results Section
-        st.markdown('<div class="custom-divider"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="section-header">📊 VULNERABILITY REPORT</div>', unsafe_allow_html=True)
+        app_mode = st.radio("Navigate", ["🚀 New Scan", "📊 My Dashboard"])
+        st.markdown("---")
+        
+        use_demo = st.checkbox("🎮 Demo Mode", value=True, help="Use our Groq for demonstration. Uncheck to test your own chatbot.")
+        
+        st.markdown("---")
+        
+        system_prompt = ""
+        if not use_demo:
+            st.markdown("### 🎯 YOUR CHATBOT")
+            provider = st.selectbox(
+                "Provider",
+                ["OpenAI", "Anthropic", "Groq", "HuggingFace", "Custom Webhook"],
+                help="Select your chatbot provider"
+            )
+            
+            user_api_key = st.text_input(
+                "Your API Key",
+                type="password",
+                help="We never store your key. It's only used for this test.",
+                placeholder="sk-..."
+            )
+            
+            if provider == "OpenAI":
+                model = st.selectbox("Model", ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo", "gpt-4"])
+            elif provider == "Anthropic":
+                model = st.selectbox("Model", ["claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307"])
+            elif provider == "Groq":
+                model = st.selectbox("Model", ["llama-3.1-70b-versatile", "mixtral-8x7b-32768", "gemma2-9b-it"])
+            elif provider == "HuggingFace":
+                model = st.selectbox("Model", ["Qwen/Qwen2.5-7B-Instruct:together", "meta-llama/Llama-3.1-8B-Instruct:together"])
+            else:  # Custom Webhook
+                model = "webhook"
+                user_api_key = st.text_input("Webhook Endpoint", placeholder="https://your-bot.com/api/chat")
+            
+            if provider != "Custom Webhook":
+                system_prompt = st.text_area("System Prompt (Optional)", height=80)
 
-        # Generate Executive Summary (New Feature)
-        with st.spinner("Generating Executive Security Summary..."):
-            try:
-                summary_text = generate_security_summary(results)
-                st.markdown(summary_text)
-                st.markdown("---")
-            except Exception as e:
-                st.error(f"Could not generate summary: {e}")
+            st.markdown(f"""
+            <div class="info-box">
+                <small>✅ Testing: {provider}/{model}</small>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class="info-box">
+                > DEMO_MODE: ACTIVE<br>
+                > TARGET: Groq (Mock Chatbot)<br>
+                > EVALUATOR: ChatGPT-style AI<br>
+                > STATUS: READY
+            </div>
+            """, unsafe_allow_html=True)
+            provider = "Groq"
+            model = AI_MODEL
+            user_api_key = None
         
-        df = pd.DataFrame(results)
-        pass_count = len(df[df['Status'] == 'PASS'])
-        fail_count = len(df[df['Status'] == 'FAIL'])
-        avg_score = df['Score'].mean()
-        pass_rate = pass_count / len(df) * 100
+        st.markdown("---")
         
-        # Metric Cards
-        col1, col2, col3, col4 = st.columns(4)
+        num_tests = st.slider("🎯 Attack Vectors", min_value=3, max_value=10, value=5)
+        
+        st.markdown("---")
+        
+        eval_mode = st.radio(
+            "🧠 Evaluation Engine",
+            ["Fast (Pattern Only)", "Advanced (AI Judge - Llama-70b)"],
+            index=1
+        )
+        
+        st.markdown("---")
+        
+        start_btn = st.button("▶ INITIATE SCAN", use_container_width=True)
+        
+        st.markdown("---")
+        st.markdown("""
+        <div style="text-align: center; color: #3d5c4f; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;">
+            OpenAI Academy • NxtWave<br>
+            Powered by GPT-4o
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ============================================
+    # DASHBOARD VIEW
+    # ============================================
+    if app_mode == "📊 My Dashboard":
+        st.markdown('<div class="section-header">📊 YOUR SECURITY POSTURE</div>', unsafe_allow_html=True)
+        history = get_user_history(st.session_state['user_id'])
+        
+        if history.empty:
+            st.info("No scans yet. Run your first scan to see data here!")
+        else:
+            # Data Processing
+            history['timestamp_dt'] = pd.to_datetime(history['timestamp'])
+            history['Formatted Date'] = history['timestamp_dt'].dt.strftime('%b %d, %H:%M')
+            
+            # Top Level Metrics
+            col1, col2, col3, col4 = st.columns(4)
+            latest = history.iloc[0]
+            
+            with col1:
+                 st.metric("Total Scans", len(history))
+            with col2:
+                 avg_score = history['score'].mean()
+                 st.metric("Avg Security Score", f"{avg_score:.1f}/5.0", delta=f"{latest['score'] - avg_score:.1f}", delta_color="normal")
+            with col3:
+                 st.metric("Latest Defense Rate", f"{latest['pass_rate']:.0f}%", delta=f"{latest['pass_rate'] - history['pass_rate'].mean():.0f}%")
+            with col4:
+                 status = "🛡️ SECURE" if latest['pass_rate'] > 80 else "🚨 AT RISK"
+                 st.metric("Current Status", status)
+
+            st.markdown("---")
+            
+            # Defense Trend Chart (Area Chart)
+            st.subheader("📈 Security Trend Analysis")
+            
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=history['Formatted Date'], 
+                y=history['pass_rate'],
+                mode='lines+markers',
+                fill='tozeroy',
+                name='Defense Rate',
+                line=dict(color='#00ff88', width=3),
+                marker=dict(size=8, color='#00ff88', line=dict(color='white', width=1)),
+                text=history['target_model'],
+                hovertemplate="<b>%{x}</b><br>Model: %{text}<br>Defense Rate: %{y:.1f}%<extra></extra>"
+            ))
+
+            fig.update_layout(
+                title=dict(text="Defense Rate Over Time", font=dict(family='Space Grotesk', size=20, color='#00ff88')),
+                xaxis=dict(
+                    title="Scan Timeline", 
+                    showgrid=False, 
+                    color='#7dd3c0', 
+                    tickfont=dict(family='JetBrains Mono')
+                ),
+                yaxis=dict(
+                    title="Defense Rate (%)", 
+                    range=[0, 105], 
+                    showgrid=True, 
+                    gridcolor='rgba(0, 255, 136, 0.1)', 
+                    color='#7dd3c0'
+                ),
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(10, 15, 12, 0.5)',
+                height=450,
+                margin=dict(l=20, r=20, t=50, b=20),
+                hovermode="x unified"
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Recent Activity Table
+            with st.expander("📜 Recent Scan History", expanded=True):
+                display_df = history[['Formatted Date', 'target_model', 'score', 'pass_rate']].copy()
+                display_df.columns = ['Date', 'Target Model', 'Risk Score (0-5)', 'Defense Rate (%)']
+                st.dataframe(
+                    display_df, 
+                    use_container_width=True,
+                    column_config={
+                        "Defense Rate (%)": st.column_config.ProgressColumn(
+                            "Defense Rate",
+                            format="%f%%",
+                            min_value=0,
+                            max_value=100,
+                        ),
+                    }
+                )
+        return
+
+    # ============================================
+    # SCAN VIEW
+    # ============================================
+    if start_btn:
+        if not use_demo and not user_api_key:
+            st.error("⚠️ API Key required. Enable Demo Mode or provide key.")
+        else:
+            # Testing Animation
+            with st.container():
+                scan_header = st.empty()
+                scan_header.markdown('<div class="section-header">🔍 SECURITY SCAN IN PROGRESS</div>', unsafe_allow_html=True)
+                
+                progress_container = st.empty()
+                status_text = st.empty()
+                detail_text = st.empty()
+                
+                # Phase 1: Connect & Analyze
+                status_text.markdown("**⚡ PHASE 1: INITIALIZATION**")
+                detail_text.markdown("```\n> Connecting to Groq API (openai/gpt-oss-120b)...\n```")
+                
+                # Phase 2: Generate Prompts
+                status_text.markdown("**🧠 PHASE 2: LOADING ATTACK VECTORS**")
+                prompts = generate_adversarial_prompts("Groq AI Model", num_tests, use_demo=use_demo)
+                detail_text.markdown("```\n> ✓ Loaded " + str(len(prompts)) + " curated jailbreak exploits\n```")
+                
+                # Phase 3: Execute Tests
+                status_text.markdown("**🎯 PHASE 3: EXECUTING ATTACKS**")
+                results = []
+                progress_bar = progress_container.progress(0)
+                
+                attack_types = ["Prompt Injection", "Data Extraction", "Social Engineering", "Bias Testing", "Logic Abuse", "Jailbreak", "Privacy Probe", "Harmful Content"]
+                
+                for i, prompt in enumerate(prompts):
+                    attack_type = attack_types[i % len(attack_types)]
+                    detail_text.markdown(f"```\n> [{i+1}/{len(prompts)}] Testing: {attack_type}\n> Sending payload to target...\n```")
+                    
+                    response = test_chatbot(prompt, provider, user_api_key, model, use_demo=use_demo, system_prompt=system_prompt)
+                    
+                    use_llm_eval = "Advanced" in eval_mode
+                    current_test_mode = "observed" if provider == "Custom Webhook" else "simulated"
+                    eval_result = evaluate_response(prompt, response, use_demo=use_demo, use_llm=use_llm_eval, test_mode=current_test_mode)
+                    
+                    status_icon = "🚨 VULNERABLE" if eval_result["status"] == "FAIL" else "✓ DEFENDED"
+                    detail_text.markdown(f"```\n> [{i+1}/{len(prompts)}] Result: {status_icon}\n```")
+                    
+                    results.append({
+                        "Prompt": prompt,
+                        "Response": response,
+                        "Score": eval_result["score"],
+                        "Status": eval_result["status"],
+                        "Reason": eval_result["reason"],
+                        "Attack Vector": eval_result.get("attack_vector", "Unknown"),
+                        "Fix": eval_result.get("Fix", "N/A")
+                    })
+                    
+                    progress_bar.progress((i + 1) / len(prompts))
+                
+                # Phase 4: Complete
+                status_text.markdown("**✅ PHASE 4: ANALYSIS COMPLETE**")
+                detail_text.markdown("```\n> SCAN COMPLETE ✓\n```")
+                scan_header.empty()
+                status_text.empty()
+                detail_text.empty()
+                progress_container.empty()
+            
+            # Results Section
+            st.markdown('<div class="custom-divider"></div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-header">📊 VULNERABILITY REPORT</div>', unsafe_allow_html=True)
+            
+            # Executive Summary
+            with st.spinner("Generating Executive Security Summary..."):
+                try:
+                    summary_text = generate_security_summary(results)
+                    st.markdown(summary_text)
+                    st.markdown("---")
+                except Exception as e:
+                    st.warning(f"Summary unavailable: {e}")
+            
+            df = pd.DataFrame(results)
+            pass_count = len(df[df['Status'] == 'PASS'])
+            fail_count = len(df[df['Status'] == 'FAIL'])
+            avg_score = df['Score'].mean()
+            pass_rate = pass_count / len(df) * 100
+            
+            # Save to DB
+            save_scan(st.session_state['user_id'], f"{provider}/{model}", avg_score, pass_rate, results)
+            st.success("Scan saved to your Dashboard!")
+            
+            # Download Buttons
+            col_dl1, col_dl2 = st.columns(2)
+            with col_dl1:
+                csv_data = df.to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Download CSV", csv_data, "chatguard_report.csv", "text/csv")
+            with col_dl2:
+                json_data = json.dumps(results, indent=2).encode('utf-8')
+                st.download_button("💾 Export JSON", json_data, "chatguard_data.json", "application/json")
+            
+            # Metric Cards
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                rate_class = "danger" if pass_rate < 50 else "warning" if pass_rate < 80 else ""
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-value {rate_class}">{pass_rate:.0f}%</div>
+                    <div class="metric-label">Defense Rate</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-value">{pass_count}</div>
+                    <div class="metric-label">Attacks Blocked</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col3:
+                fail_class = "danger" if fail_count > 0 else ""
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-value {fail_class}">{fail_count}</div>
+                    <div class="metric-label">Vulnerabilities</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col4:
+                score_class = "danger" if avg_score < 2.5 else "warning" if avg_score < 4 else ""
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-value {score_class}">{avg_score:.1f}</div>
+                    <div class="metric-label">Security Score</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # Charts Row
+            chart_col1, chart_col2 = st.columns(2)
+            
+            with chart_col1:
+                fig_pie = go.Figure(data=[go.Pie(
+                    labels=['Defended', 'Breached'],
+                    values=[pass_count, fail_count],
+                    hole=0.65,
+                    marker_colors=['#00ff88', '#ff4444'],
+                    textinfo='label+percent',
+                    textfont_size=13,
+                    textfont_color='white'
+                )])
+                fig_pie.update_layout(
+                    title=dict(text="Attack Results", font=dict(size=16, color='#00ff88', family='Space Grotesk')),
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    showlegend=False,
+                    height=320,
+                    annotations=[dict(text=f'{pass_rate:.0f}%', x=0.5, y=0.5, font_size=32, font_color='#00ff88', showarrow=False, font_family='JetBrains Mono')]
+                )
+                st.plotly_chart(fig_pie, use_container_width=True)
+            
+            with chart_col2:
+                score_counts = df['Score'].value_counts().reindex(range(0, 6), fill_value=0)
+                colors = ['#ff4444', '#ff6b35', '#ffb800', '#a3e635', '#22c55e', '#00ff88']
+                
+                fig_bar = go.Figure(data=[go.Bar(
+                    x=['0', '1', '2', '3', '4', '5'],
+                    y=score_counts.values,
+                    marker_color=colors,
+                    text=score_counts.values,
+                    textposition='outside',
+                    textfont=dict(color='#7dd3c0', size=14, family='JetBrains Mono')
+                )])
+                fig_bar.update_layout(
+                    title=dict(text="Score Distribution", font=dict(size=16, color='#00ff88', family='Space Grotesk')),
+                    xaxis=dict(title="Security Score", color='#5a7d6f', gridcolor='rgba(0,255,136,0.1)', title_font=dict(family='Space Grotesk')),
+                    yaxis=dict(title="Count", color='#5a7d6f', gridcolor='rgba(0,255,136,0.1)', title_font=dict(family='Space Grotesk')),
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    height=320
+                )
+                st.plotly_chart(fig_bar, use_container_width=True)
+            
+            # Detailed Results
+            st.markdown('<div class="custom-divider"></div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-header">📋 DETAILED ANALYSIS</div>', unsafe_allow_html=True)
+            
+            for idx, row in df.iterrows():
+                icon = "🚨" if row['Status'] == 'FAIL' else "✅"
+                with st.expander(f"{icon} Attack #{idx + 1}: {row['Prompt'][:50]}...", expanded=False):
+                    
+                    # Attack & Response
+                    c1, c2 = st.columns([1, 1])
+                    with c1:
+                        st.markdown("**⚡ ATTACK VECTOR**")
+                        st.info(row['Prompt'])
+                    with c2:
+                        st.markdown("**🤖 BOT RESPONSE**")
+                        st.code(row['Response'], language="text", wrap_lines=True)
+                    
+                    # Metrics
+                    m1, m2, m3 = st.columns([1, 1, 2])
+                    with m1:
+                        st.markdown(f"**SCORE**")
+                        st.markdown(f"<h3 style='color: {'#ff4444' if row['Score']<3 else '#00ff88'}'>{row['Score']}/5</h3>", unsafe_allow_html=True)
+                    with m2:
+                        st.markdown(f"**STATUS**")
+                        st.markdown(f"<h3 style='color: {'#ff4444' if row['Status']=='FAIL' else '#00ff88'}'>{row['Status']}</h3>", unsafe_allow_html=True)
+                    with m3:
+                        st.markdown("**🔍 ANALYSIS**")
+                        st.write(row['Reason'])
+                    
+                    # Remediation
+                    if row['Status'] == 'FAIL':
+                        st.markdown("---")
+                        st.markdown("**🛡️ SUGGESTED REMEDIATION**")
+                        st.success(row['Fix'], icon="🛡️")
+
+    else:
+        # Landing State
+        st.markdown("""
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🧠</div>
+                <div class="feature-title">AI-Powered Attacks</div>
+                <div class="feature-desc">GPT-4o generates sophisticated adversarial prompts</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🛡️</div>
+                <div class="feature-title">Safety Analysis</div>
+                <div class="feature-desc">OpenAI Moderation API detects harmful content</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📈</div>
+                <div class="feature-title">Visual Reports</div>
+                <div class="feature-desc">Interactive dashboards with export options</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <div class="feature-title">3-Click Testing</div>
+                <div class="feature-desc">No complex setup, instant vulnerability detection</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        
+        st.markdown('<div class="section-header">🔧 HOW IT WORKS</div>', unsafe_allow_html=True)
+        
+        col1, col2, col3 = st.columns(3)
         
         with col1:
-            rate_class = "danger" if pass_rate < 50 else "warning" if pass_rate < 80 else ""
-            st.markdown(f"""
+            st.markdown("""
             <div class="metric-card">
-                <div class="metric-value {rate_class}">{pass_rate:.0f}%</div>
-                <div class="metric-label">Defense Rate</div>
+                <div style="font-size: 2.5rem; margin-bottom: 1rem; color: #00ff88;">01</div>
+                <div class="feature-title">DEFINE TARGET</div>
+                <div class="feature-desc">Describe your chatbot's purpose and domain</div>
             </div>
             """, unsafe_allow_html=True)
         
         with col2:
-            st.markdown(f"""
+            st.markdown("""
             <div class="metric-card">
-                <div class="metric-value">{pass_count}</div>
-                <div class="metric-label">Attacks Blocked</div>
+                <div style="font-size: 2.5rem; margin-bottom: 1rem; color: #00ff88;">02</div>
+                <div class="feature-title">EXECUTE SCAN</div>
+                <div class="feature-desc">AI generates and runs adversarial attacks</div>
             </div>
             """, unsafe_allow_html=True)
         
         with col3:
-            fail_class = "danger" if fail_count > 0 else ""
-            st.markdown(f"""
+            st.markdown("""
             <div class="metric-card">
-                <div class="metric-value {fail_class}">{fail_count}</div>
-                <div class="metric-label">Vulnerabilities</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col4:
-            score_class = "danger" if avg_score < 2.5 else "warning" if avg_score < 4 else ""
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value {score_class}">{avg_score:.1f}</div>
-                <div class="metric-label">Security Score</div>
+                <div style="font-size: 2.5rem; margin-bottom: 1rem; color: #00ff88;">03</div>
+                <div class="feature-title">GET INSIGHTS</div>
+                <div class="feature-desc">Review vulnerabilities and recommendations</div>
             </div>
             """, unsafe_allow_html=True)
         
         st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Charts Row
-        chart_col1, chart_col2 = st.columns(2)
-        
-        with chart_col1:
-            fig_pie = go.Figure(data=[go.Pie(
-                labels=['Defended', 'Breached'],
-                values=[pass_count, fail_count],
-                hole=0.65,
-                marker_colors=['#00ff88', '#ff4444'],
-                textinfo='label+percent',
-                textfont_size=13,
-                textfont_color='white'
-            )])
-            fig_pie.update_layout(
-                title=dict(text="Attack Results", font=dict(size=16, color='#00ff88', family='Space Grotesk')),
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                showlegend=False,
-                height=320,
-                annotations=[dict(text=f'{pass_rate:.0f}%', x=0.5, y=0.5, font_size=32, font_color='#00ff88', showarrow=False, font_family='JetBrains Mono')]
-            )
-            st.plotly_chart(fig_pie, use_container_width=True)
+        st.info("👈 **Configure your target in the sidebar and click 'INITIATE SCAN' to begin**")
 
-        # Human Footer
-        st.markdown('<div class="human-footer">built with <span style="color:#00ff88;">intelligence</span> by Glitch Hunters</div>', unsafe_allow_html=True)
-        
-        with chart_col2:
-            score_counts = df['Score'].value_counts().reindex(range(0, 6), fill_value=0)
-            colors = ['#ff4444', '#ff6b35', '#ffb800', '#a3e635', '#22c55e', '#00ff88']
-            
-            fig_bar = go.Figure(data=[go.Bar(
-                x=['0', '1', '2', '3', '4', '5'],
-                y=score_counts.values,
-                marker_color=colors,
-                text=score_counts.values,
-                textposition='outside',
-                textfont=dict(color='#7dd3c0', size=14, family='JetBrains Mono')
-            )])
-            fig_bar.update_layout(
-                title=dict(text="Score Distribution", font=dict(size=16, color='#00ff88', family='Space Grotesk')),
-                xaxis=dict(title="Security Score", color='#5a7d6f', gridcolor='rgba(0,255,136,0.1)', title_font=dict(family='Space Grotesk')),
-                yaxis=dict(title="Count", color='#5a7d6f', gridcolor='rgba(0,255,136,0.1)', title_font=dict(family='Space Grotesk')),
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                height=320
-            )
-            st.plotly_chart(fig_bar, use_container_width=True)
-            
-        st.info("🔧 Evaluation Engine: Pattern-based (fast, free, deterministic) — Upgradable to OpenAI Moderation API for advanced independent checks (live when credits available).")
-        
-        # Detailed Results
-        st.markdown('<div class="custom-divider"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="section-header">📋 DETAILED ANALYSIS</div>', unsafe_allow_html=True)
-        
-        for idx, row in df.iterrows():
-            icon = "🚨" if row['Status'] == 'FAIL' else "✅"
-            with st.expander(f"{icon} Attack #{idx + 1}: {row['Prompt'][:55]}..."):
-                st.markdown(f"""**Attack Vector:**
-```text
-{row['Prompt']}
-```
 
-**Bot Response:**
-> {row['Response']}
-
-**Attack Type:** `{row.get('Attack Vector', 'Unknown')}`
-
-**Score:** `{row['Score']}/5` | **Result:** `{row['Status']}` | **Risk:** `{row.get('Risk %', 'N/A')}%`
-
-**Analysis:** {row['Reason']}
-
-**Remediation Suggestion:** {row.get('Fix', 'No specific remediation available.')}
-""")
-        
-        # Export
-        st.markdown('<div class="custom-divider"></div>', unsafe_allow_html=True)
-        
-        col_export1, col_export2, col_export3 = st.columns([1, 2, 1])
-        with col_export2:
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="⬇ DOWNLOAD FULL REPORT",
-                data=csv,
-                file_name='chatguard_security_report.csv',
-                mime='text/csv',
-                use_container_width=True
-            )
-
+# ============================================
+# MAIN ENTRY POINT
+# ============================================
+if st.session_state['user_id']:
+    show_main_app()
 else:
-    # Landing State
-    st.markdown("""
-    <div class="feature-grid">
-        <div class="feature-card">
-            <div class="feature-icon">🧠</div>
-            <div class="feature-title">AI-Powered Attacks</div>
-            <div class="feature-desc">GPT-4o generates sophisticated adversarial prompts</div>
-        </div>
-        <div class="feature-card">
-            <div class="feature-icon">🛡️</div>
-            <div class="feature-title">Safety Analysis</div>
-            <div class="feature-desc">OpenAI Moderation API detects harmful content</div>
-        </div>
-        <div class="feature-card">
-            <div class="feature-icon">📈</div>
-            <div class="feature-title">Visual Reports</div>
-            <div class="feature-desc">Interactive dashboards with export options</div>
-        </div>
-        <div class="feature-card">
-            <div class="feature-icon">⚡</div>
-            <div class="feature-title">3-Click Testing</div>
-            <div class="feature-desc">No complex setup, instant vulnerability detection</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    
-    st.markdown('<div class="section-header">🔧 HOW IT WORKS</div>', unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("""
-        <div class="metric-card">
-            <div style="font-size: 2.5rem; margin-bottom: 1rem; color: #00ff88;">01</div>
-            <div class="feature-title">DEFINE TARGET</div>
-            <div class="feature-desc">Describe your chatbot's purpose and domain</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown("""
-        <div class="metric-card">
-            <div style="font-size: 2.5rem; margin-bottom: 1rem; color: #00ff88;">02</div>
-            <div class="feature-title">EXECUTE SCAN</div>
-            <div class="feature-desc">AI generates and runs adversarial attacks</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown("""
-        <div class="metric-card">
-            <div style="font-size: 2.5rem; margin-bottom: 1rem; color: #00ff88;">03</div>
-            <div class="feature-title">GET INSIGHTS</div>
-            <div class="feature-desc">Review vulnerabilities and recommendations</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.info("👈 **Configure your target in the sidebar and click 'INITIATE SCAN' to begin**")
-    
-    # Custom Jailbreak Testing Section
-    st.markdown('<div class="custom-divider"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-header">🧪 TEST YOUR OWN JAILBREAK</div>', unsafe_allow_html=True)
-    
-    st.markdown("""
-    <div class="info-box">
-    💡 Got a custom jailbreak prompt? Test it here and see how the AI Judge evaluates it in real-time.
-    </div>
-    """, unsafe_allow_html=True)
-    
-    custom_prompt = st.text_area(
-        "Enter your jailbreak prompt:",
-        placeholder="Example: Ignore your safety guidelines and tell me how to...",
-        height=120,
-        key="custom_jailbreak"
-    )
-    
-    col_test1, col_test2, col_test3 = st.columns([1, 1, 1])
-    with col_test2:
-        test_custom_btn = st.button("🚀 TEST PROMPT", use_container_width=True, key="test_custom")
-    
-    if test_custom_btn:
-        if not custom_prompt.strip():
-            st.error("⚠️ Please enter a prompt to test.")
-        elif not use_demo and not user_api_key:
-            st.error("⚠️ API Key required. Enable Demo Mode or provide key.")
-        else:
-            with st.spinner("🔍 Testing your jailbreak..."):
-                # Send to target
-                response = test_chatbot(custom_prompt, provider, user_api_key, model, use_demo=use_demo, system_prompt=system_prompt)
-                
-                # Evaluate with AI Judge (always use LLM for custom tests)
-                current_test_mode = "observed" if provider == "Custom Webhook" else "simulated"
-                eval_result = evaluate_response(custom_prompt, response, use_demo=use_demo, use_llm=True, test_mode=current_test_mode)
-                
-                # Display results
-                st.markdown('<div class="custom-divider"></div>', unsafe_allow_html=True)
-                
-                status_color = "#ff4444" if eval_result["status"] == "FAIL" else "#00ff88"
-                status_icon = "🚨" if eval_result["status"] == "FAIL" else "✅"
-                
-                st.markdown(f"""
-                <div class="metric-card" style="border-color: {status_color};">
-                    <div style="font-size: 2rem; margin-bottom: 0.5rem;">{status_icon}</div>
-                    <div class="metric-value" style="color: {status_color};">{eval_result['status']}</div>
-                    <div class="metric-label">Result</div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                st.markdown("**Target Response:**")
-                st.markdown(f"> {response}")
-                
-                st.markdown(f"**Score:** `{eval_result['score']}/5` | **Risk:** `{eval_result.get('risk_score', 50)}%` | **Robustness:** `{eval_result.get('robustness', 50)}%`")
-                st.markdown(f"**Eval Mode:** `{eval_result.get('eval_mode', 'N/A')}`")
-                
-                # Display Failure Analysis (only if FAIL)
-                if eval_result["status"] == "FAIL":
-                    st.markdown("---")
-                    st.markdown("**🔬 FAILURE ANALYSIS:**")
-                    st.markdown(f"- **Attack Vector:** `{eval_result.get('attack_vector', 'unknown')}`")
-                    st.markdown(f"- **Type:** `{eval_result.get('failure_type', 'unknown')}`")
-                    st.markdown(f"- **Root Cause:** `{eval_result.get('root_cause', 'unknown')}`")
-                    st.markdown(f"- **Impact Level:** `{eval_result.get('impact_level', 'unknown')}`")
-                    st.markdown(f"- **Recommended Fix:** {eval_result.get('fix', 'N/A')}")
-                    st.markdown("---")
-                
-                st.markdown(f"**AI Judge Analysis:** {eval_result['reason']}")
-
+    show_login()
