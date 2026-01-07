@@ -590,24 +590,25 @@ def _basic_evaluation(prompt, response):
     }
 
 
-def simple_chat(user_message):
+def simple_chat(messages):
     """
     Direct chat with the AI for connection verification.
+    Accepts full message history for context-aware responses.
     Falls back to simulated response if API fails.
     """
     if GROQ_AVAILABLE:
         client = get_ai_client()
         if client:
-            text, error = safe_model_run(client, [
-                {"role": "user", "content": user_message}
-            ])
+            text, error = safe_model_run(client, messages)
             
             if error:
                 # Fallback to simulation instead of showing error
-                return _simulate_chat_response(user_message)
+                last_msg = messages[-1]["content"] if messages else ""
+                return _simulate_chat_response(last_msg)
             return text if text else "No response received."
     
-    return _simulate_chat_response(user_message)
+    last_msg = messages[-1]["content"] if messages else ""
+    return _simulate_chat_response(last_msg)
 
 
 def _simulate_chat_response(user_message):
@@ -624,3 +625,4 @@ def _simulate_chat_response(user_message):
         return "I cannot comply with that request. I'm designed to be helpful, harmless, and honest."
     else:
         return f"That's an interesting question! I'd be happy to discuss '{user_message[:50]}...' further. What specifically would you like to know?"
+

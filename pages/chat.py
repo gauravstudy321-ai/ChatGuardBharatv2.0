@@ -67,8 +67,8 @@ if prompt := st.chat_input("Say something to the AI..."):
         message_placeholder = st.empty()
         message_placeholder.markdown("Thinking... 🤔")
         
-        # CALL THE NEW UTILS FUNCTION
-        full_response = simple_chat(prompt)
+        # Pass full conversation history for context
+        full_response = simple_chat(st.session_state.messages)
         
         message_placeholder.markdown(full_response)
         
